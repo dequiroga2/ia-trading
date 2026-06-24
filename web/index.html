@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bitget Bot — Portal de Trading IA</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">▲</span>
+    <div>
+      <h1>Bitget Bot — Portal IA</h1>
+      <div class="sub">Análisis y gráfica en tiempo real · Backtesting con costos reales</div>
+    </div>
+  </div>
+  <div class="status">
+    <span id="dot" class="dot off"></span>
+    <span id="conn">conectando…</span>
+    <span id="clock" class="clock"></span>
+  </div>
+</header>
+
+<!-- TICKERS EN VIVO -->
+<section class="tickers" id="tickers"></section>
+
+<!-- RAZONAMIENTO DE LA IA -->
+<section class="card">
+  <div class="card-head">
+    <h2>🧠 Razonamiento de la IA <span id="aiEngine" class="engine-tag"></span></h2>
+    <div class="controls"><span id="aiUpdated" class="hint"></span></div>
+  </div>
+  <div id="aiPanel" class="ai-grid"></div>
+  <p class="hint">La IA mira el gráfico en vivo en 5 temporalidades (1m→4h), combina las 5 estrategias y razona si hay oportunidad. <b>No envía órdenes</b> — solo analiza.</p>
+</section>
+
+<div class="grid">
+  <!-- GRAFICA EN TIEMPO REAL -->
+  <section class="card chart-card">
+    <div class="card-head">
+      <h2>Gráfica en tiempo real</h2>
+      <div class="controls">
+        <select id="chartSymbol"></select>
+        <div class="tf-group" id="tfGroup"></div>
+      </div>
+    </div>
+    <div id="chart" class="chart"></div>
+    <div class="legend">
+      <span class="lg ema9">EMA 9</span>
+      <span class="lg ema21">EMA 21</span>
+      <span class="lg ema200">EMA 200 (tendencia)</span>
+    </div>
+  </section>
+
+  <!-- ANALISIS EN VIVO -->
+  <section class="card">
+    <div class="card-head"><h2>Análisis en vivo (15m)</h2></div>
+    <div id="analysis" class="analysis"></div>
+    <p class="hint">Señal actual de cada estrategia. <b>long</b>=comprar · <b>short</b>=vender · <b>flat</b>=sin entrada. Se recalcula cada 12 s.</p>
+  </section>
+</div>
+
+<!-- BACKTESTING -->
+<section class="card">
+  <div class="card-head">
+    <h2>Backtesting — última semana (datos reales Bitget)</h2>
+    <div class="controls">
+      <span class="cap-label">Capital:</span>
+      <div class="tf-group" id="capGroup">
+        <button data-cap="50" class="active">$50</button>
+        <button data-cap="100">$100</button>
+      </div>
+    </div>
+  </div>
+  <div id="btMeta" class="bt-meta"></div>
+  <div id="summary" class="summary"></div>
+
+  <div class="grid">
+    <div>
+      <h3 class="tbl-title">Todos los escenarios (ordena haciendo clic en las columnas)</h3>
+      <div class="table-wrap">
+        <table id="scenTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div>
+      <h3 class="tbl-title">Curva de capital — <span id="curveName">selecciona una fila</span></h3>
+      <div id="equity" class="chart small"></div>
+    </div>
+  </div>
+
+  <div id="notes" class="notes"></div>
+</section>
+
+<footer>
+  Herramienta de simulación y monitoreo. No es asesoría financiera. Operar futuros con apalancamiento puede liquidar tu capital.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

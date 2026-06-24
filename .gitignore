@@ -1,0 +1,7 @@
+# NUNCA subir secretos ni caché
+.env
+*.key
+data_cache/
+__pycache__/
+*.pyc
+.claude/

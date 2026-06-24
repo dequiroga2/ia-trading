@@ -1,0 +1,16 @@
+# Despliegue 1-clic en Render.com (plan gratuito).
+# 1. Sube esta carpeta a un repo de GitHub.
+# 2. En Render: New -> Blueprint -> conecta el repo. Detecta este archivo.
+# 3. Añade la variable ANTHROPIC_API_KEY como "secret" (NO la pongas en el repo).
+services:
+  - type: web
+    name: bitget-bot-portal
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt anthropic
+    startCommand: python server.py
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false        # se introduce a mano en el panel de Render (secreto)
+      - key: PYTHON_VERSION
+        value: "3.12.8"
