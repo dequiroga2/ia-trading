@@ -25,6 +25,10 @@ from indicators import add_indicators
 from strategies import STRATEGIES, base_params
 from live_monitor import BitgetLiveMonitor
 import ai_analyst
+from mtf import build_snapshot, ensemble_decision
+from paper_trader import book
+import notify
+from data import fetch_recent
 
 BASE = "https://api.bitget.com"
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
@@ -98,7 +102,7 @@ def _analysis_worker():
 def _ai_run_once():
     for sym in WATCH:
         try:
-            out = ai_analyst.reason(sym)
+            out = ai_analyst.reason(sym, config.AI_WATCH_MODEL)
             out["updated"] = datetime.now(timezone.utc).isoformat()
             with ai_lock:
                 ai_state[sym] = out
@@ -116,6 +120,59 @@ def _ai_worker():
     while True:
         _t.sleep(max(config.AI_REFRESH_SECONDS, 60))
         _ai_run_once()
+
+
+def _live_price(sym):
+    s = monitor.state.get(sym)
+    if s and s.get("last"):
+        return float(s["last"])
+    try:
+        df = fetch_recent(sym, "1m", config.PRODUCT_TYPE, 2)
+        return float(df["close"].iloc[-1])
+    except Exception:
+        return None
+
+
+_ai_cooldown = {}   # symbol -> epoch hasta el que no se vuelve a consultar la IA
+
+
+def _watcher_worker():
+    """Vigila el mercado continuamente (Nivel 0 GRATIS). Cuando hay candidato, el modelo
+    BARATO (Haiku) lo confirma (Nivel 1). Alerta + abre paper trade. Cierra por SL/TP."""
+    import time as _t
+    while True:
+        try:
+            for sym in WATCH:
+                price = _live_price(sym)
+                if price is None:
+                    continue
+                # 1) gestionar posicion abierta (cerrar por SL/TP) -> Nivel 0, gratis
+                closed = book.update_price(sym, price)
+                if closed:
+                    notify.send_alert(book.alerts[-1]["msg"])
+                if book.has_open(sym):
+                    continue
+                # 2) detectar candidato con el motor GRATIS
+                snap = build_snapshot(sym)
+                if abs(snap["confluence_score"]) < config.SETUP_SCORE_THRESHOLD:
+                    continue
+                # cooldown: no consultar la IA por el mismo simbolo demasiado seguido
+                if _t.time() < _ai_cooldown.get(sym, 0):
+                    continue
+                # 3) confirmar con el modelo BARATO (o motor gratis si AI_CONFIRM_SETUPS=False)
+                if config.AI_CONFIRM_SETUPS:
+                    decision = ai_analyst.reason(sym, config.AI_WATCH_MODEL)["decision"]
+                else:
+                    decision = ensemble_decision(snap)
+                _ai_cooldown[sym] = _t.time() + config.AI_CONSULT_COOLDOWN_MIN * 60
+                if (decision.get("direction") in ("long", "short")
+                        and decision.get("confidence", 0) >= config.MIN_CONFIDENCE
+                        and decision.get("entry") and decision.get("stop") and decision.get("take_profit")):
+                    book.open_trade(sym, decision)
+                    notify.send_alert(book.alerts[-1]["msg"])
+        except Exception as e:
+            print(f"[watcher] {e}")
+        _t.sleep(max(config.SCAN_INTERVAL_SECONDS, 20))
 
 
 # -------- rutas API --------
@@ -162,11 +219,22 @@ def api_ai():
                     "model": config.AI_MODEL, "symbols": data})
 
 
+@app.route("/api/paper")
+def api_paper():
+    return jsonify(book.snapshot())
+
+
+@app.route("/api/cost")
+def api_cost():
+    from cost_tracker import tracker
+    return jsonify(tracker.summary())
+
+
 @app.route("/api/ai/<symbol>")
 def api_ai_one(symbol):
-    """Fuerza un re-analisis inmediato de un simbolo (boton 'analizar ahora')."""
+    """Fuerza un analisis A FONDO con el modelo POTENTE (Opus) bajo demanda."""
     try:
-        out = ai_analyst.reason(symbol.upper())
+        out = ai_analyst.reason(symbol.upper(), config.AI_MODEL)
         out["updated"] = datetime.now(timezone.utc).isoformat()
         with ai_lock:
             ai_state[symbol.upper()] = out
@@ -190,6 +258,8 @@ def start_background():
     threading.Thread(target=monitor.run, daemon=True).start()
     threading.Thread(target=_analysis_worker, daemon=True).start()
     threading.Thread(target=_ai_worker, daemon=True).start()
+    if getattr(config, "PAPER_TRADING", False):
+        threading.Thread(target=_watcher_worker, daemon=True).start()
 
 
 if __name__ == "__main__":

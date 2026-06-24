@@ -2,6 +2,7 @@
 .env
 *.key
 data_cache/
+paper/
 __pycache__/
 *.pyc
 .claude/

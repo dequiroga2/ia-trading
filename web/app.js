@@ -155,6 +155,91 @@ function renderAI(symbols) {
 }
 setInterval(pollAI, 10000);
 
+/* ---------------- AI cost dashboard ---------------- */
+let costChart, costSeries;
+function initCost() {
+  const el = document.getElementById("costChart");
+  costChart = LightweightCharts.createChart(el, {
+    layout: { background: { color: "transparent" }, textColor: "#8a93a8" },
+    grid: { vertLines: { color: "#1b2233" }, horzLines: { color: "#1b2233" } },
+    timeScale: { timeVisible: true, borderColor: "#263049" },
+    rightPriceScale: { borderColor: "#263049" },
+    width: el.clientWidth, height: 260,
+  });
+  costSeries = costChart.addAreaSeries({ lineColor: "#16c784", topColor: "rgba(22,199,132,.4)", bottomColor: "rgba(22,199,132,0)", lineWidth: 2 });
+  new ResizeObserver(() => costChart.applyOptions({ width: el.clientWidth })).observe(el);
+}
+async function pollCost() {
+  try {
+    const c = await fetch("/api/cost").then(r => r.json());
+    document.getElementById("costSummary").innerHTML =
+      `<span class="ps">hoy <b>$${fmt(c.today, 4)}</b></span>
+       <span class="ps">total <b>$${fmt(c.total, 4)}</b></span>
+       <span class="ps">consultas <b>${c.n_calls}</b></span>`;
+    const order = Object.entries(c.per_model || {});
+    document.getElementById("costModels").innerHTML = order.length ? order.map(([k, v]) => {
+      const cls = k.includes("Opus") ? "opus" : (k.includes("Haiku") ? "haiku" : "");
+      return `<div class="cm ${cls}"><div><div class="cmn">${k}</div>
+        <div class="cmd">${v.calls} consultas · ${(v.tokens / 1000).toFixed(1)}k tokens</div></div>
+        <div class="cmc">$${fmt(v.cost, 4)}</div></div>`;
+    }).join("") : `<div class="empty">Aún no se ha usado la IA de pago. El vigilante gratis está activo.</div>`;
+    // tabla últimas llamadas
+    document.querySelector("#costTable thead").innerHTML =
+      "<tr><th>Hora</th><th>Modelo</th><th>Tokens</th><th>Costo$</th></tr>";
+    document.querySelector("#costTable tbody").innerHTML = (c.recent || []).length
+      ? c.recent.map(r => `<tr><td>${new Date(r.ts).toLocaleTimeString()}</td>
+          <td>${r.model.includes("opus") ? "Opus" : (r.model.includes("haiku") ? "Haiku" : r.model)}</td>
+          <td>${r.in + r.out}</td><td>$${fmt(r.cost, 5)}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">Sin llamadas todavía.</td></tr>`;
+    // gráfica acumulada
+    if (costSeries && c.series) {
+      let lastT = 0; const data = [];
+      c.series.forEach(p => { let t = Math.floor(new Date(p.ts).getTime() / 1000); if (t <= lastT) t = lastT + 1; lastT = t; data.push({ time: t, value: p.cum }); });
+      costSeries.setData(data); if (data.length) costChart.timeScale().fitContent();
+    }
+  } catch (e) {}
+}
+setInterval(pollCost, 8000);
+
+/* ---------------- paper trading ---------------- */
+async function pollPaper() {
+  try {
+    const p = await fetch("/api/paper").then(r => r.json());
+    const rc = p.return_pct >= 0 ? "pos" : "neg";
+    document.getElementById("paperSummary").innerHTML =
+      `<span class="ps">capital <b class="${rc}">$${fmt(p.equity, 2)}</b></span>
+       <span class="ps">resultado <b class="${rc}">${p.return_pct >= 0 ? "+" : ""}${p.return_pct}%</b></span>
+       <span class="ps">abiertas <b>${p.n_open}</b></span>
+       <span class="ps">cerradas <b>${p.n_closed}</b></span>
+       <span class="ps">aciertos <b>${p.win_rate}%</b></span>`;
+    // posiciones abiertas
+    const open = Object.values(p.open || {});
+    document.getElementById("paperOpen").innerHTML = open.length ? open.map(o => {
+      const d = dec(o.entry);
+      return `<div class="pos ${o.direction}">
+        <div class="pt"><span>${o.direction === "long" ? "▲ LONG" : "▼ SHORT"} ${o.symbol}</span><span>${o.leverage}x</span></div>
+        <div class="pl">entrada ${fmt(o.entry, d)} · stop ${fmt(o.stop, d)} · objetivo ${fmt(o.tp, d)}</div>
+      </div>`;
+    }).join("") : `<div class="empty">Sin posiciones abiertas. El vigilante está escaneando…</div>`;
+    // historial
+    const tb = document.querySelector("#paperHist tbody");
+    document.querySelector("#paperHist thead").innerHTML =
+      "<tr><th>Símbolo</th><th>Dir</th><th>Motivo</th><th>PnL$</th><th>Capital</th></tr>";
+    const h = (p.history || []).slice().reverse();
+    tb.innerHTML = h.length ? h.map(t => {
+      const rc2 = t.pnl >= 0 ? "pos" : "neg";
+      return `<tr><td>${t.symbol}</td><td>${t.direction}</td><td>${t.reason}</td>
+        <td class="${rc2}">${t.pnl >= 0 ? "+" : ""}${fmt(t.pnl, 2)}</td><td>${fmt(t.equity_after, 2)}</td></tr>`;
+    }).join("") : `<tr><td colspan="5" class="empty">Aún no hay operaciones cerradas.</td></tr>`;
+    // alertas
+    const a = (p.alerts || []).slice().reverse();
+    document.getElementById("paperAlerts").innerHTML = a.length ? a.map(x =>
+      `<div class="alert ${x.kind}"><div class="at">${new Date(x.ts).toLocaleString()}</div>${x.msg}</div>`).join("")
+      : `<div class="empty">Sin alertas todavía. Aparecerán aquí (y en tu Telegram si lo configuras).</div>`;
+  } catch (e) {}
+}
+setInterval(pollPaper, 5000);
+
 /* ---------------- backtest ---------------- */
 const COLS = [
   ["strategy", "Estrategia", 0], ["symbol", "Símbolo", 0], ["tf", "TF", 0], ["maker", "Orden", 0],
@@ -282,7 +367,7 @@ document.getElementById("capGroup").querySelectorAll("button").forEach(b => b.on
 
 /* ---------------- boot ---------------- */
 window.addEventListener("load", () => {
-  initChart(); initEquity(); buildChartControls(); loadChart();
-  pollAnalysis(); pollAI(); loadBacktest();
+  initChart(); initEquity(); initCost(); buildChartControls(); loadChart();
+  pollAnalysis(); pollAI(); pollPaper(); pollCost(); loadBacktest();
   setInterval(loadChart, 6000);
 });

@@ -47,8 +47,14 @@ DRY_RUN = True              # True = no envia ordenes reales (paper trading)
 # ----------------------------- IA (cerebro que razona) --------------
 # La IA usa la API de Claude. Necesita la variable de entorno ANTHROPIC_API_KEY.
 # Si NO hay clave, el portal usa el motor de confluencia determinista (gratis, sin IA).
-AI_MODEL = "claude-opus-4-8"   # OJO al costo. "claude-haiku-4-5" es ~5x mas barato (recomendado para uso frecuente)
-AI_THINKING = True             # razonamiento adaptativo (mas inteligente, algo mas caro)
+# MODELO POR NIVELES (costo-beneficio):
+#  - Nivel 0: motor de confluencia GRATIS vigila siempre (sin IA, sin costo).
+#  - Nivel 1: modelo BARATO (Haiku) confirma una oportunidad antes de alertarte. Pocas veces/dia.
+#  - Nivel 2: modelo POTENTE (Opus) solo cuando pulsas "analizar a fondo" en el portal.
+AI_WATCH_MODEL = "claude-haiku-4-5"   # barato, para confirmar oportunidades del vigilante
+AI_MODEL = "claude-opus-4-8"          # potente, solo bajo demanda (boton del portal)
+AI_THINKING = True                    # razonamiento adaptativo (solo se aplica a Opus/Sonnet)
+AI_CONSULT_COOLDOWN_MIN = 15          # no volver a consultar la IA por el mismo simbolo en X min (evita gasto)
 # SEGURIDAD DE COSTO: por defecto la IA NO corre en bucle. Solo analiza:
 #   - una vez al arrancar (para que el panel muestre algo)
 #   - cuando pulsas "analizar ahora" en el portal (bajo demanda)
@@ -56,3 +62,18 @@ AI_THINKING = True             # razonamiento adaptativo (mas inteligente, algo 
 # Pon AI_AUTO_RUN = True solo si entiendes el costo (ver tabla en el README/respuesta).
 AI_AUTO_RUN = False
 AI_REFRESH_SECONDS = 900       # si AI_AUTO_RUN=True: cada cuanto re-analiza (900s = 15 min)
+
+# ----------------------------- VIGILANTE + PAPER TRADING ------------
+# El vigilante escanea el mercado con el motor de confluencia GRATIS y, cuando
+# detecta una oportunidad, te ALERTA y abre una operacion SIMULADA (paper).
+PAPER_TRADING = True           # activa el vigilante + libro de paper trading
+SCAN_INTERVAL_SECONDS = 60     # cada cuanto escanea el mercado (gratis, sin IA)
+SETUP_SCORE_THRESHOLD = 0.40   # |score de confluencia| minimo para considerar una oportunidad
+MIN_CONFIDENCE = 0.55          # confianza minima de la decision para abrir paper trade
+AI_CONFIRM_SETUPS = True       # True = al detectar setup, el modelo BARATO (Haiku) lo confirma antes
+                               #        de alertarte (recomendado; ~unas pocas llamadas/dia, necesita key).
+                               # False = el vigilante decide solo con el motor GRATIS (0 costo).
+
+# Alertas a tu movil por Telegram (opcional, gratis). Ver instrucciones en notify.py
+TELEGRAM_BOT_TOKEN = ""
+TELEGRAM_CHAT_ID = ""

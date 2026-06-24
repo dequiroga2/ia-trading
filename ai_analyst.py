@@ -67,8 +67,10 @@ def _client():
         return None
 
 
-def reason(symbol: str) -> dict:
-    """Devuelve {snapshot, decision, engine}. Usa Claude si hay clave; si no, el ensemble."""
+def reason(symbol: str, model: str = None) -> dict:
+    """Devuelve {snapshot, decision, engine}. Usa Claude si hay clave; si no, el ensemble.
+    `model` permite elegir el barato (Haiku, vigilante) o el potente (Opus, bajo demanda)."""
+    model = model or config.AI_MODEL
     snapshot = build_snapshot(symbol)
     client = _client()
 
@@ -82,20 +84,28 @@ def reason(symbol: str) -> dict:
             f"y decide la mejor accion. Devuelve la decision estructurada.")
 
     kwargs = dict(
-        model=config.AI_MODEL,
+        model=model,
         max_tokens=2000,
         system=SYSTEM,
         messages=[{"role": "user", "content": user}],
         output_format=TradeDecision,
     )
-    if config.AI_THINKING:
+    # el razonamiento adaptativo solo aplica a Opus/Sonnet/Fable (Haiku no lo soporta)
+    if config.AI_THINKING and any(m in model for m in ("opus", "sonnet", "fable")):
         kwargs["thinking"] = {"type": "adaptive"}
 
     try:
         resp = client.messages.parse(**kwargs)
         dec = resp.parsed_output.model_dump()
-        dec["engine"] = config.AI_MODEL
-        return {"symbol": symbol, "snapshot": snapshot, "decision": dec, "engine": config.AI_MODEL}
+        dec["engine"] = model
+        try:
+            from cost_tracker import tracker
+            u = resp.usage
+            cost = tracker.record(model, u.input_tokens or 0, u.output_tokens or 0)
+            dec["call_cost"] = round(cost, 5)
+        except Exception:
+            pass
+        return {"symbol": symbol, "snapshot": snapshot, "decision": dec, "engine": model}
     except Exception as e:
         dec = ensemble_decision(snapshot)
         dec["reasoning"] = f"[IA no disponible: {e}] " + dec["reasoning"]
