@@ -75,7 +75,7 @@ def build_snapshot(symbol):
         score += w * s["trend"]                          # alineacion de tendencia
         strat_votes = sum(_dir(v) for v in s["signals"].values())
         score += w * np.clip(strat_votes / 2.0, -1, 1)   # acuerdo entre estrategias
-    norm = score / max_score if max_score else 0          # -1..+1
+    norm = float(score / max_score) if max_score else 0.0  # -1..+1
 
     if norm > 0.30:
         bias, action = "alcista", "buscar LONG"

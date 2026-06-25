@@ -38,6 +38,28 @@ WATCH = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 app = Flask(__name__, static_folder=None)
 CORS(app)
 
+
+# Serializador JSON tolerante a tipos de numpy (evita errores 500 en la VPS)
+from flask.json.provider import DefaultJSONProvider
+import numpy as _np
+
+
+class _NpJSON(DefaultJSONProvider):
+    def default(self, o):
+        if isinstance(o, _np.integer):
+            return int(o)
+        if isinstance(o, _np.floating):
+            return float(o)
+        if isinstance(o, _np.ndarray):
+            return o.tolist()
+        try:
+            return super().default(o)
+        except TypeError:
+            return str(o)
+
+
+app.json = _NpJSON(app)
+
 # -------- estado en vivo --------
 monitor = BitgetLiveMonitor(WATCH)
 analysis_state = {}          # symbol -> {tf -> {signals, indicators}}
