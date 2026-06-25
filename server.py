@@ -39,19 +39,38 @@ app = Flask(__name__, static_folder=None)
 CORS(app)
 
 
-# Serializador JSON tolerante a tipos de numpy (evita errores 500 en la VPS)
+# Serializador JSON robusto: convierte tipos de numpy y reemplaza NaN/Infinity por null.
+# (numpy/pandas nuevos pueden generar NaN -> JSON invalido -> el navegador no lo parsea
+#  y los paneles quedan vacios. Esto lo evita.)
+import math as _math
 from flask.json.provider import DefaultJSONProvider
 import numpy as _np
 
 
+def _sanitize(o):
+    if isinstance(o, float):
+        return None if (_math.isnan(o) or _math.isinf(o)) else o
+    if isinstance(o, _np.floating):
+        f = float(o)
+        return None if (_math.isnan(f) or _math.isinf(f)) else f
+    if isinstance(o, _np.integer):
+        return int(o)
+    if isinstance(o, _np.bool_):
+        return bool(o)
+    if isinstance(o, _np.ndarray):
+        return _sanitize(o.tolist())
+    if isinstance(o, dict):
+        return {k: _sanitize(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_sanitize(v) for v in o]
+    return o
+
+
 class _NpJSON(DefaultJSONProvider):
+    def dumps(self, obj, **kwargs):
+        return super().dumps(_sanitize(obj), **kwargs)
+
     def default(self, o):
-        if isinstance(o, _np.integer):
-            return int(o)
-        if isinstance(o, _np.floating):
-            return float(o)
-        if isinstance(o, _np.ndarray):
-            return o.tolist()
         try:
             return super().default(o)
         except TypeError:
