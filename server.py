@@ -66,6 +66,15 @@ analysis_state = {}          # symbol -> {tf -> {signals, indicators}}
 analysis_lock = threading.Lock()
 ai_state = {}                # symbol -> {snapshot, decision, engine, updated}
 ai_lock = threading.Lock()
+WORKER_ERRORS = {}           # nombre_worker -> {error, ts} (para diagnostico)
+
+
+def _log_err(worker, e):
+    import traceback
+    msg = f"{type(e).__name__}: {e}"
+    WORKER_ERRORS[worker] = {"error": msg, "trace": traceback.format_exc()[-600:],
+                             "ts": datetime.now(timezone.utc).isoformat()}
+    print(f"[{worker}] {msg}", flush=True)
 
 
 def _fetch_recent_candles(symbol, tf, limit=300):
@@ -117,7 +126,7 @@ def _analysis_worker():
                 with analysis_lock:
                     analysis_state[sym] = info
             except Exception as e:
-                print(f"[analysis] {sym}: {e}")
+                _log_err(f"analysis:{sym}", e)
         time.sleep(12)
 
 
@@ -138,7 +147,7 @@ def _ai_run_once():
         try:
             _panel_update(sym)
         except Exception as e:
-            print(f"[ai] {sym}: {e}")
+            _log_err(f"ai:{sym}", e)
 
 
 def _ai_worker():
@@ -205,7 +214,7 @@ def _watcher_worker():
                     book.open_trade(sym, decision)
                     notify.send_alert(book.alerts[-1]["msg"])
         except Exception as e:
-            print(f"[watcher] {e}")
+            _log_err("watcher", e)
         _t.sleep(max(config.SCAN_INTERVAL_SECONDS, 20))
 
 
@@ -262,6 +271,38 @@ def api_paper():
 def api_cost():
     from cost_tracker import tracker
     return jsonify(tracker.summary())
+
+
+@app.route("/api/debug")
+def api_debug():
+    """Diagnostico: abre esta URL en el navegador y pega el resultado si algo falla."""
+    import sys
+    info = {
+        "ai_state_symbols": list(analysis_state.keys()) and list(ai_state.keys()),
+        "ai_state_count": len(ai_state),
+        "analysis_state_count": len(analysis_state),
+        "worker_errors": WORKER_ERRORS,
+        "has_anthropic_key": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+        "ticker_symbols": [s for s in WATCH if monitor.state.get(s)],
+        "python": sys.version.split()[0],
+    }
+    try:
+        import flask, numpy, pandas, anthropic
+        info["versions"] = {"flask": flask.__version__, "numpy": numpy.__version__,
+                            "pandas": pandas.__version__, "anthropic": anthropic.__version__}
+    except Exception as e:
+        info["versions_error"] = str(e)
+    # probar de verdad construir el snapshot de un simbolo y reportar el error si lo hay
+    try:
+        from mtf import build_snapshot
+        snap = build_snapshot("BTCUSDT")
+        info["build_snapshot_ok"] = True
+        info["confluence_score"] = snap.get("confluence_score")
+    except Exception as e:
+        import traceback
+        info["build_snapshot_ok"] = False
+        info["build_snapshot_error"] = traceback.format_exc()[-800:]
+    return jsonify(info)
 
 
 @app.route("/api/ai/<symbol>")
