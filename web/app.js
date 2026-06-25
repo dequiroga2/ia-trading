@@ -65,6 +65,7 @@ function ema(vals, n) {
   vals.forEach((v, i) => { prev = i ? v * k + prev * (1 - k) : v; out.push(prev); });
   return out;
 }
+let _chartKey = "";
 async function loadChart() {
   try {
     const r = await fetch(`/api/candles?symbol=${chartSym}&tf=${chartTf}&limit=300`);
@@ -74,6 +75,13 @@ async function loadChart() {
     const closes = d.map(x => x.close), t = d.map(x => x.time);
     const mk = (n) => ema(closes, n).map((v, i) => ({ time: t[i], value: v }));
     e9.setData(mk(9)); e21.setData(mk(21)); e200.setData(mk(200));
+    // al cambiar de símbolo/temporalidad: recentrar escala de precio y tiempo
+    const key = chartSym + "_" + chartTf;
+    if (key !== _chartKey) {
+      _chartKey = key;
+      chart.priceScale("right").applyOptions({ autoScale: true });
+      chart.timeScale().fitContent();
+    }
   } catch (e) {}
 }
 function buildChartControls() {
@@ -116,7 +124,7 @@ async function pollAI() {
   try {
     const r = await fetch("/api/ai"); const j = await r.json();
     const tag = document.getElementById("aiEngine");
-    if (j.engine_mode === "claude") { tag.textContent = "Claude · " + j.model; tag.className = "engine-tag claude"; }
+    if (j.engine_mode === "claude") { tag.textContent = "panel gratis · Opus solo con el botón"; tag.className = "engine-tag claude"; }
     else { tag.textContent = "motor de confluencia (sin API key)"; tag.className = "engine-tag"; }
     renderAI(j.symbols);
   } catch (e) {}

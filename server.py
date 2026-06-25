@@ -99,13 +99,22 @@ def _analysis_worker():
         time.sleep(12)
 
 
+def _panel_update(sym, snap=None, decision=None, engine="confluencia (gratis)"):
+    """Actualiza el panel 'Razonamiento de la IA'. Por defecto usa el motor GRATIS."""
+    if snap is None:
+        snap = build_snapshot(sym)
+    if decision is None:
+        decision = ensemble_decision(snap)
+    with ai_lock:
+        ai_state[sym] = {"symbol": sym, "snapshot": snap, "decision": decision,
+                         "engine": engine, "updated": datetime.now(timezone.utc).isoformat()}
+
+
 def _ai_run_once():
+    # llena el panel rapido y GRATIS con el motor de confluencia (sin gastar en IA)
     for sym in WATCH:
         try:
-            out = ai_analyst.reason(sym, config.AI_WATCH_MODEL)
-            out["updated"] = datetime.now(timezone.utc).isoformat()
-            with ai_lock:
-                ai_state[sym] = out
+            _panel_update(sym)
         except Exception as e:
             print(f"[ai] {sym}: {e}")
 
@@ -150,18 +159,21 @@ def _watcher_worker():
                 closed = book.update_price(sym, price)
                 if closed:
                     notify.send_alert(book.alerts[-1]["msg"])
+                # 2) snapshot + refrescar el panel SIEMPRE (gratis) -> nunca se queda en "analizando"
+                snap = build_snapshot(sym)
+                _panel_update(sym, snap)
                 if book.has_open(sym):
                     continue
-                # 2) detectar candidato con el motor GRATIS
-                snap = build_snapshot(sym)
+                # 3) ¿hay candidato?
                 if abs(snap["confluence_score"]) < config.SETUP_SCORE_THRESHOLD:
                     continue
-                # cooldown: no consultar la IA por el mismo simbolo demasiado seguido
                 if _t.time() < _ai_cooldown.get(sym, 0):
                     continue
-                # 3) confirmar con el modelo BARATO (o motor gratis si AI_CONFIRM_SETUPS=False)
+                # 4) confirmar con el modelo BARATO (Haiku) o motor gratis
                 if config.AI_CONFIRM_SETUPS:
-                    decision = ai_analyst.reason(sym, config.AI_WATCH_MODEL)["decision"]
+                    res = ai_analyst.reason(sym, config.AI_WATCH_MODEL)
+                    decision = res["decision"]
+                    _panel_update(sym, res["snapshot"], decision, config.AI_WATCH_MODEL)
                 else:
                     decision = ensemble_decision(snap)
                 _ai_cooldown[sym] = _t.time() + config.AI_CONSULT_COOLDOWN_MIN * 60
